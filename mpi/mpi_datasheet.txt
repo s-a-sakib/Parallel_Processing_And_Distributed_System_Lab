@@ -1,0 +1,76 @@
+MPI_Init(&argc, &argv);              // MPI শুরু
+
+int rank, size;
+MPI_Comm_rank(MPI_COMM_WORLD, &rank); // আমার process id (0..size-1)
+MPI_Comm_size(MPI_COMM_WORLD, &size); // মোট process সংখ্যা
+
+// ... MPI calls ...
+
+MPI_Finalize();                       // MPI শেষ
+
+
+
+MPI_Send(
+    /* buf      */ send_ptr,          // যে ডাটা পাঠাবে তার address (e.g., &x, arr)
+    /* count    */ send_count,        // কয়টা element পাঠাবে (bytes না)
+    /* datatype */ send_type,         // element টাইপ: MPI_INT/MPI_DOUBLE/MPI_CHAR...
+    /* dest     */ dest_rank,         // কোন rank এ যাবে
+    /* tag      */ tag_id,            // message label/ID (matching recv-এর সাথে)
+    /* comm     */ MPI_COMM_WORLD     // communicator (সাধারণত MPI_COMM_WORLD)
+);
+int x = 42;
+MPI_Send(&x, 1, MPI_INT, 1, 0, MPI_COMM_WORLD);
+
+
+MPI_Recv(
+    /* buf      */ recv_ptr,          // যেখানে receive হবে (e.g., &y, arr)
+    /* count    */ recv_capacity,     // সর্বোচ্চ কয়টা element নিতে পারবে (buffer capacity)
+    /* datatype */ recv_type,         // expected type (MPI_INT etc.)
+    /* source   */ src_rank,          // কোন rank থেকে আসবে (বা MPI_ANY_SOURCE)
+    /* tag      */ tag_id,            // কোন tag-এর message (বা MPI_ANY_TAG)
+    /* comm     */ MPI_COMM_WORLD,    // communicator
+    /* status   */ &status            // message info (src, tag, actual count)
+);
+int y;
+MPI_Recv(&y, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+
+MPI_Bcast(
+    /* buffer   */ buf_ptr,           // root-এ: data আছে; others-এ: এখানে receive হবে
+    /* count    */ count,             // কয়টা element broadcast হবে
+    /* datatype */ type,              // element type
+    /* root     */ root_rank,         // কে broadcast করছে
+    /* comm     */ MPI_COMM_WORLD
+);
+
+int const MSG_SIZE = 50;
+    char message[MSG_SIZE];
+    if(rank == 0){
+        strcpy(message, "Broadcast message from Process 0");
+    }
+MPI_Bcast(message, MSG_SIZE, MPI_CHAR, 0, MPI_COMM_WORLD);
+
+
+
+MPI_Scatter(
+    /* sendbuf   */ (rank==root ? send_ptr : nullptr), // root-এর full array (others: nullptr)
+    /* sendcount */ chunk_per_rank,                     // প্রতি rank কত element পাবে
+    /* sendtype  */ send_type,                          // type
+    /* recvbuf   */ recv_ptr,                           // প্রত্যেক rank-এর local buffer
+    /* recvcount */ chunk_per_rank,                     // local-এ কয়টা element আসবে (সাধারণত sendcount)
+    /* recvtype  */ recv_type,                          // type
+    /* root      */ root_rank,
+    /* comm      */ MPI_COMM_WORLD
+);
+
+MPI_Gather(
+    /* sendbuf   */ send_ptr,                            // প্রত্যেক rank যা পাঠাবে (local result/data)
+    /* sendcount */ k,                                   // প্রতি rank কত element পাঠাবে
+    /* sendtype  */ send_type,
+    /* recvbuf   */ (rank==root ? recv_ptr : nullptr),    // root-এর big buffer (others: nullptr)
+    /* recvcount */ k,                                   // root প্রতি rank থেকে কত element রাখবে (=sendcount)
+    /* recvtype  */ recv_type,
+    /* root      */ root_rank,
+    /* comm      */ MPI_COMM_WORLD
+);
+
