@@ -1,4 +1,3 @@
-//Simplified
 #include <bits/stdc++.h>
 #include <mpi.h>
 using namespace std;
@@ -8,54 +7,66 @@ struct Contact {
     string phone;
 };
 
-void send_string(const string &text, int receiver) {
-    int len = text.size() + 1;
-    MPI_Send(&len, 1, MPI_INT, receiver, 1, MPI_COMM_WORLD);
-    MPI_Send(text.c_str(), len, MPI_CHAR, receiver, 1, MPI_COMM_WORLD);
+void send_string(const string &text, int receiver, int tag=1) {
+    int len = (int)text.size() + 1;
+    MPI_Send(&len, 1, MPI_INT, receiver, tag, MPI_COMM_WORLD);
+    MPI_Send(text.c_str(), len, MPI_CHAR, receiver, tag, MPI_COMM_WORLD);
 }
 
-void receive_string(string &text, int sender) {
+string receive_string(int sender, int tag=1) {
     int len;
-    MPI_Recv(&len, 1, MPI_INT, sender, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-    char buffer[len];
-    MPI_Recv(buffer, len, MPI_CHAR, sender, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-    text = string(buffer);
+    MPI_Recv(&len, 1, MPI_INT, sender, tag, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    vector<char> buffer(len);
+    MPI_Recv(buffer.data(), len, MPI_CHAR, sender, tag, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    return string(buffer.data());
 }
 
-vector <Contact> string_to_contacts(const string &data){
-    vector <Contact> contacts;
+vector<Contact> string_to_contacts(const string &data) {
+    vector<Contact> contacts;
     stringstream ss(data);
     string line;
     while (getline(ss, line)) {
+        if (line.empty()) continue;
         size_t pos = line.find(',');
-        if (pos != string::npos) {
-            Contact contact;
-            contact.name = line.substr(0, pos);
-            contact.phone = line.substr(pos + 1);
-            contacts.push_back(contact);
-        }
+        if (pos == string::npos) continue;
+        Contact c;
+        c.name = line.substr(0, pos);
+        c.phone = line.substr(pos + 1);
+        contacts.push_back(c);
     }
     return contacts;
 }
 
+string contacts_to_string(const vector<Contact> &contacts, int start, int end) {
+    string out;
+    for (int i = start; i < min((int)contacts.size(), end); i++) {
+        out += contacts[i].name + "," + contacts[i].phone + "\n";
+    }
+    return out;
+}
+
 string check(const Contact &contact, const string &query) {
     if (contact.name.find(query) != string::npos) {
-        return contact.name + ": " + contact.phone;
+        return contact.name + ": " + contact.phone + "\n";
     }
     return "";
 }
 
-void read_file(const string &filename, vector <Contact> &contacts) {
+void read_file(const string &filename, vector<Contact> &contacts) {
     ifstream file(filename);
+    if (!file.is_open()) {
+        cerr << "Could not open file: " << filename << "\n";
+        return;
+    }
     string line;
     while (getline(file, line)) {
+        if (line.empty()) continue;
         size_t pos = line.find(',');
-        if (pos != string::npos) {
-            Contact contact;
-            contact.name = line.substr(0, pos);
-            contact.phone = line.substr(pos + 1);
-            contacts.push_back(contact);
-        }
+        if (pos == string::npos) continue;
+        Contact c;
+        c.name = line.substr(0, pos);
+        c.phone = line.substr(pos + 1);
+        contacts.push_back(c);
     }
 }
 
@@ -69,13 +80,13 @@ int main(int argc, char **argv) {
     string filename = "phonebook1.txt";
     string search_term;
 
-    // ---- Take input from terminal (only rank 0) ----
+    // Input only on rank 0
     if (rank == 0) {
         cout << "Enter search term: ";
         cin >> search_term;
     }
 
-    // ---- Broadcast search term to all processes ----
+    // Broadcast search term
     char query_buf[100] = {0};
     if (rank == 0) strncpy(query_buf, search_term.c_str(), 99);
     MPI_Bcast(query_buf, 100, MPI_CHAR, 0, MPI_COMM_WORLD);
@@ -84,18 +95,15 @@ int main(int argc, char **argv) {
     double start, end;
 
     if (rank == 0) {
-        vector<string> files;
-        files.push_back(filename);
-
         vector<Contact> contacts;
-        read_phonebook(files, contacts);
+        read_file(filename, contacts);
 
-        int total = contacts.size();
-        int chunk = (total + size - 1) / size;
+        int total = (int)contacts.size();
+        int chunk = (total + size - 1) / size;   // ceil
 
         // Send chunks to workers
         for (int i = 1; i < size; i++) {
-            string text = vector_to_string(contacts, i * chunk, (i + 1) * chunk);
+            string text = contacts_to_string(contacts, i * chunk, (i + 1) * chunk);
             send_string(text, i);
         }
 
@@ -104,14 +112,13 @@ int main(int argc, char **argv) {
         // Root searches its own chunk
         string result;
         for (int i = 0; i < min(chunk, total); i++) {
-            string match = check(contacts[i], search_term);
-            if (!match.empty()) result += match;
+            result += check(contacts[i], search_term);
         }
 
-        // Collect worker results
+        // Collect results
         for (int i = 1; i < size; i++) {
             string recv = receive_string(i);
-            if (!recv.empty()) result += recv;
+            result += recv;
         }
 
         end = MPI_Wtime();
@@ -121,7 +128,7 @@ int main(int argc, char **argv) {
         out.close();
 
         cout << "Results saved to output.txt\n";
-        printf("Process %d took %f seconds.\n", rank, end - start);
+        printf("Rank %d total time: %f seconds.\n", rank, end - start);
 
     } else {
         // Worker side
@@ -132,14 +139,13 @@ int main(int argc, char **argv) {
 
         string result;
         for (auto &c : contacts) {
-            string match = check(c, search_term);
-            if (!match.empty()) result += match;
+            result += check(c, search_term);
         }
 
         end = MPI_Wtime();
 
         send_string(result, 0);
-        printf("Process %d took %f seconds.\n", rank, end - start);
+        printf("Rank %d local time: %f seconds.\n", rank, end - start);
     }
 
     MPI_Finalize();
