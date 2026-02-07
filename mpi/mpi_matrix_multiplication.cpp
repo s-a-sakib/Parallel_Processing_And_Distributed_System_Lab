@@ -1,6 +1,7 @@
 #include <mpi.h>
 #include <iostream>
 #include <vector>
+#include <ctime>
 using namespace std;
 
 int main(int argc, char** argv) {
@@ -9,8 +10,9 @@ int main(int argc, char** argv) {
     int rank, size;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
+    srand(time(0));
 
-    const int N = 4;                 // Matrix is N x N
+    const int N = 10;                 // Matrix is N x N
     if (N % size != 0) {
         if (rank == 0) std::cout << "Error: N must be divisible by number of processes.\n";
         MPI_Finalize();
@@ -26,13 +28,13 @@ int main(int argc, char** argv) {
         // Example initialization
         for (int i = 0; i < N; i++) {
             for (int j = 0; j < N; j++) {
-                cin >> A[i][j];       // Simple values for A
+                A[i][j] = rand() % 10;      // Simple values for A
             }
         }
 
         for (int i = 0; i < N; i++) {
             for (int j = 0; j < N; j++) {
-                cin >> B[i][j];          // Simple values for B
+                B[i][j] = rand() % 10;          // Simple values for B
             }
         }
     }
